@@ -10,5 +10,5 @@ repository = "https://github.com/IlleNilsson/xmip-core-transform"
 description = "Designable transformation between declared Xmip Contracts."
 
 [dependencies]
-xmip-contract = { package = "xmip-core-contract", git = "https://github.com/IlleNilsson/xmip-core-contract", branch = "main" }
-xmip-message = { package = "xmip-core-message", git = "https://github.com/IlleNilsson/xmip-core-message", branch = "main" }
+contract = { package = "xmip-core-contract", git = "https://github.com/IlleNilsson/xmip-core-contract", branch = "main" }
+message = { package = "xmip-core-message", git = "https://github.com/IlleNilsson/xmip-core-message", branch = "main" }
