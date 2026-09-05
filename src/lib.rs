@@ -1,9 +1,9 @@
 #![forbid(unsafe_code)]
 
+use contract::{ContractDescriptor, StructureReader};
+use message::Message;
 use std::error::Error;
 use std::fmt;
-use xmip_contract::{ContractDescriptor, StructureReader};
-use xmip_message::Message;
 
 #[derive(Debug)]
 pub struct TransformError {
