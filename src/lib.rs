@@ -2,21 +2,8 @@
 
 use contract::{ContractDescriptor, StructureReader};
 use message::Message;
-use std::error::Error;
-use std::fmt;
 
-#[derive(Debug)]
-pub struct TransformError {
-    pub message: String,
-}
-
-impl fmt::Display for TransformError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
-    }
-}
-
-impl Error for TransformError {}
+xcore::declare_error!(TransformError);
 
 pub struct TransformRequest<'a> {
     pub message: &'a Message,
