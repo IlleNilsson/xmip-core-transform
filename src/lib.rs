@@ -1,7 +1,7 @@
 #![forbid(unsafe_code)]
 
-use contract::{ContractDescriptor, StructureReader};
 use message::Message;
+use sdk::contract::{ContractDescriptor, StructureReader};
 
 xcore::declare_error!(TransformError);
 
@@ -30,7 +30,7 @@ pub trait TransformRegistry: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use contract::ContractId;
+    use sdk::contract::ContractId;
 
     fn descriptor(id: &str, representation: &str) -> ContractDescriptor {
         ContractDescriptor {
