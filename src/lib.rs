@@ -1,13 +1,17 @@
 #![forbid(unsafe_code)]
 
-use contract::{ContractDescriptor, StructureReader};
+use contract::ContractDescriptor;
 use message::Message;
+use stream::Stream;
 
 xcore::declare_error!(TransformError);
 
+/// One transformation asked for: the Message, the Stream of the section it
+/// reads, held to the transformer's input contract, and the contract the
+/// result is written to.
 pub struct TransformRequest<'a> {
     pub message: &'a Message,
-    pub input: &'a dyn StructureReader,
+    pub input: &'a Stream,
     pub output_contract: &'a ContractDescriptor,
 }
 
