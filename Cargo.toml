@@ -14,3 +14,6 @@ description = "Designable transformation between declared Xmip Contracts."
 xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main" }
 contract = { package = "xmip-core-contract", git = "https://github.com/IlleNilsson/xmip-core-contract", branch = "main" }
 message = { package = "xmip-core-message", git = "https://github.com/IlleNilsson/xmip-core-message", branch = "main" }
+
+[profile.dev.package."*"]
+opt-level = 3
