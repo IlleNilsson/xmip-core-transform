@@ -7,15 +7,54 @@ version = "0.1.0"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/IlleNilsson/xmip-core-transform"
-description = "Designable transformation between declared Xmip Contracts."
+description = "Transformation: one Message's content into a new Message's, by the standard transform units, streamed."
+
+[lib]
+# The engines mount beside this source (ADR-0049).
+path = ".src/lib.rs"
+
+[features]
+# The units' code and what it is built on. Without it the crate is its units'
+# declarations alone, which configure reads the standard module by.
+default = ["units"]
+units = ["dep:message", "dep:codec", "dep:serde", "dep:serde_json", "dep:quick-xml"]
 
 [dependencies]
-# The error is declared once, in core (ADR-0037).
+# The error is declared once, in core (ADR-0037), and a unit's settings in
+# its one shape.
 xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main" }
-contract = { package = "xmip-core-contract", git = "https://github.com/IlleNilsson/xmip-core-contract", branch = "main" }
-message = { package = "xmip-core-message", git = "https://github.com/IlleNilsson/xmip-core-message", branch = "main" }
-# The input a transformer reads: a section's Stream.
-stream = { package = "xmip-core-stream", git = "https://github.com/IlleNilsson/xmip-core-stream", branch = "main" }
+# A unit as its crate declares it, and the stage of the message path it is
+# opened at.
+node = { package = "xmip-core-node", git = "https://github.com/IlleNilsson/xmip-core-node", branch = "main" }
+# The Message transformed, and the Foundation's walk of delimited records.
+message = { package = "xmip-core-message", git = "https://github.com/IlleNilsson/xmip-core-message", branch = "main", optional = true }
+# XML's escaping and Base 64, spelled once for the estate.
+codec = { package = "xmip-core-library-codec", git = "https://github.com/IlleNilsson/xmip-core-library-codec", branch = "main", optional = true }
+# JSON read a value at a time through visitors that write as they visit,
+# and JSON's strings written: the parser the estate already reads with.
+serde = { version = "1", optional = true }
+serde_json = { version = "1", optional = true }
+# XML read as events, a piece at a time: the estate's other XML reader,
+# roxmltree, builds the whole document.
+quick-xml = { version = "0.42", optional = true }
+
+[dev-dependencies]
+# The counting allocator and the one latency spread the estate's tests
+# measure with.
+xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main", features = ["test-support"] }
+# A Message for the tests to transform.
+context = { package = "xmip-core-context", git = "https://github.com/IlleNilsson/xmip-core-context", branch = "main" }
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+too_many_lines = "warn"
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+unwrap_used = "warn"
+expect_used = "allow"
 
 [profile.dev.package."*"]
 opt-level = 3
