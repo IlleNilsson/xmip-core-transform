@@ -155,7 +155,7 @@ pub const DECLARATIONS: [&Declaration; 3] = [CONVERT_UNIT, STYLESHEET_UNIT, SCRI
 
 /// Why a step's scripting `runtime` is refused, where it is: the one rule
 /// the configuration's check and a starting node both call (the owner,
-/// 2026-10-22: *Keeping JavaScript out of it from the begining is one
+/// 2026-10-22: *Keeping JavaScript out of it from the beginning is one
 /// way*). JavaScript is refused by name, and no setting allows it.
 #[must_use]
 pub fn script_refusal(runtime: &str) -> Option<String> {

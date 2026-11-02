@@ -42,7 +42,7 @@ tree, so a Stylesheet holds the document it transforms.
 **Script** runs PowerShell in a process of its own, started when its step
 is opened and kept warm: the script is loaded once and handed one Message's
 content at a time (the owner, 2026-10-22: *We have to be lenient to people
-that does not know all languages*). JavaScript is refused by name, and no
+who do not know all languages*). JavaScript is refused by name, and no
 setting allows it (`script::refusal`, the one rule the configuration's
 check and a starting node call). A script is never refused for being slow;
 the operations surfaces report its cost and suggest a compiled unit

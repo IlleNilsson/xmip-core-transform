@@ -1,7 +1,7 @@
 //! Script: content transformed by a script the step names, in a runtime
 //! the configuration invites (the owner, 2026-10-22: *There are other
-//! transformations, like with compled code or scripts like PowerShell, god
-//! forbidd JavaScript*; *We have to be lenient to people that does not
+//! transformations, like with compiled code or scripts like PowerShell, God
+//! forbid JavaScript*; *We have to be lenient to people who do not
 //! know all languages*). PowerShell is the one built; JavaScript is
 //! refused by name, in words, and nothing allows it (`declaration::script_refusal`,
 //! the one rule the configuration's check and a starting node both call).
