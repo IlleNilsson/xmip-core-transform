@@ -6,6 +6,8 @@
 
 use std::io::{Read, Write};
 
+use xcore::kept::{Kept, Reading, Writing};
+
 use message::Message;
 use message::record::Delimited;
 
@@ -14,7 +16,7 @@ use crate::json_csv::Columns;
 use crate::{Stage, Transform, TransformError, TransformUnit, Values};
 use crate::{csv_json, json_csv, json_xml, xml_json};
 
-/// How much of the content a conversion reads at a time.
+/// How much of the content a conversion reads at a time, and writes.
 pub(crate) const CHUNK: usize = 64 * 1024;
 
 /// Convert, as the standard module declares it.
@@ -36,6 +38,8 @@ struct Convert {
     delimited: Delimited,
     header: bool,
     columns: Option<Vec<String>>,
+    /// The piece read and the piece written, kept between Streams.
+    kept: Kept<(Vec<u8>, Vec<u8>)>,
 }
 
 /// A list a setting gives, its names separated by commas.
@@ -79,6 +83,7 @@ fn open(_: Stage, values: &Values) -> Result<Box<dyn Transform>, String> {
         delimited: Delimited::separated_by(separator),
         header: values.boolean("header"),
         columns,
+        kept: Kept::new(|| (vec![0u8; CHUNK], Vec::with_capacity(CHUNK))),
     }))
 }
 
@@ -89,19 +94,30 @@ impl Transform for Convert {
         input: &mut dyn Read,
         output: &mut dyn Write,
     ) -> Result<(), TransformError> {
-        match self.pair {
-            Pair::XmlJson => xml_json::convert(&self.arrays, input, output),
-            Pair::JsonXml => json_xml::convert(self.root.as_deref(), input, output),
-            Pair::CsvJson => csv_json::convert(self.delimited, self.header, input, output),
-            Pair::JsonCsv => {
-                let columns = Columns {
-                    delimited: self.delimited,
-                    header: self.header,
-                    named: self.columns.as_deref(),
-                };
-                json_csv::convert(&columns, input, output)
+        // Read and written a piece at a time, in pieces the step keeps:
+        // each conversion writes a name, a mark or a value at a time, and
+        // each went to `output` on its own. Over a pipe that was a call per
+        // piece, and 61 MiB of XML took 135 seconds there and back
+        // (2026-11-04); a reader and a writer made for every Stream were
+        // most of what ten records cost (2026-11-05). Each conversion
+        // flushes the writer at its end.
+        self.kept.with(|(read, written)| {
+            let input = &mut Reading::new(input, read);
+            let output = &mut Writing::new(output, written);
+            match self.pair {
+                Pair::XmlJson => xml_json::convert(&self.arrays, input, output),
+                Pair::JsonXml => json_xml::convert(self.root.as_deref(), input, output),
+                Pair::CsvJson => csv_json::convert(self.delimited, self.header, input, output),
+                Pair::JsonCsv => {
+                    let columns = Columns {
+                        delimited: self.delimited,
+                        header: self.header,
+                        named: self.columns.as_deref(),
+                    };
+                    json_csv::convert(&columns, input, output)
+                }
             }
-        }
+        })
     }
 }
 

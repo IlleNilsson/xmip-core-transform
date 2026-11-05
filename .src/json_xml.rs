@@ -10,7 +10,7 @@
 //! names open on the way down and one string at a time.
 
 use std::fmt;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufRead, Write};
 
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 
@@ -27,13 +27,10 @@ use crate::declaration::CONVERT as NAME;
 /// is named, or reading or writing failed.
 pub(crate) fn convert(
     root: Option<&str>,
-    input: &mut dyn Read,
+    input: &mut dyn BufRead,
     output: &mut dyn Write,
 ) -> Result<(), TransformError> {
-    let mut reading = serde_json::Deserializer::from_reader(BufReader::with_capacity(
-        crate::convert::CHUNK,
-        input,
-    ));
+    let mut reading = serde_json::Deserializer::from_reader(input);
     let mut out = Out { output };
     let written = match root {
         Some(root) => Repeated {

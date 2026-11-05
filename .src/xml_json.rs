@@ -16,7 +16,7 @@
 //! closes the element it ends and never builds a document.
 
 use std::borrow::Cow;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufRead, Write};
 
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
@@ -80,10 +80,10 @@ fn refused(why: impl std::fmt::Display) -> TransformError {
 /// holds text beside its children, or reading or writing failed.
 pub(crate) fn convert(
     arrays: &[String],
-    input: &mut dyn Read,
+    input: &mut dyn BufRead,
     output: &mut dyn Write,
 ) -> Result<(), TransformError> {
-    let mut reader = Reader::from_reader(BufReader::with_capacity(crate::convert::CHUNK, input));
+    let mut reader = Reader::from_reader(input);
     let mut writer = Writer {
         output,
         arrays,
