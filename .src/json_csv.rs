@@ -9,13 +9,12 @@
 //! is held is one record.
 
 use std::fmt;
-use std::io::{BufReader, Read, Write};
+use std::io::{BufRead, Write};
 
 use message::record::Delimited;
 use serde::de::{self, DeserializeSeed, Deserializer, MapAccess, SeqAccess, Visitor};
 
 use crate::TransformError;
-use crate::convert::CHUNK;
 use crate::declaration::CONVERT as NAME;
 
 /// What the step says of the CSV written.
@@ -33,10 +32,10 @@ pub(crate) struct Columns<'a> {
 /// no column, or reading or writing failed.
 pub(crate) fn convert(
     columns: &Columns<'_>,
-    input: &mut dyn Read,
+    input: &mut dyn BufRead,
     output: &mut dyn Write,
 ) -> Result<(), TransformError> {
-    let mut reading = serde_json::Deserializer::from_reader(BufReader::with_capacity(CHUNK, input));
+    let mut reading = serde_json::Deserializer::from_reader(input);
     let mut records = Records {
         columns,
         named: columns.named.map(<[String]>::to_vec),

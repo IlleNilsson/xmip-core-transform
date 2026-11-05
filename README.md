@@ -21,8 +21,10 @@ The standard transform units, each declared once beside its code as an
 **Convert** never holds the content whole. XML is read by `quick-xml`'s
 event reader; JSON by `serde_json`'s reader through visitors that write as
 they visit; CSV by the Foundation's walk of delimited records
-(`message::record`), a piece at a time. An element is a member named for
-it, an attribute a member named `@` and its name, text beside attributes
+(`message::record`), a piece at a time. What it reads and writes goes
+through two pieces the step keeps (`xmip-core`'s `kept`), so the output
+leaves a piece at a time, not a name or a value at a time. An element is
+a member named for it, an attribute a member named `@` and its name, text beside attributes
 `#text`. A reader that never looks ahead cannot know an element repeats
 until it has written the first, so the elements written as JSON arrays are
 named in `arrays`; an element repeating unnamed is refused in words, never
@@ -53,4 +55,4 @@ their own modules, called the same way (ADR-0066 clause 4).
 
 `doc/architecture/runtime-model.md` sections 3, 10 and 22 govern where and
 what it changes, ADR-0042 what a Contract holds and ADR-0066 the units;
-`architecture.toml` carries the maturity.
+`architecture.xmip` carries the maturity.
