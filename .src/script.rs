@@ -20,6 +20,7 @@
 use std::io::{BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
+use xcore::lock::Locked;
 
 use message::Message;
 
@@ -172,10 +173,7 @@ impl Transform for Scripted {
         input
             .read_to_end(&mut content)
             .map_err(|failed| TransformError::of_io(NAME, &failed))?;
-        let mut host = self
-            .host
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut host = self.host.locked();
         if host.is_none() {
             *host = Some(Host::start(&self.script).map_err(TransformError::new)?);
         }
