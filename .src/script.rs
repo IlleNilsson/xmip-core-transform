@@ -144,7 +144,7 @@ impl Host {
         Ok(if outcome == 0 {
             Ok(answer)
         } else {
-            Err(String::from_utf8_lossy(&answer).into_owned())
+            Err(String::from_utf8_lossy_owned(answer))
         })
     }
 }
