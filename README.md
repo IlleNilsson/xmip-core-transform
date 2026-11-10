@@ -55,4 +55,4 @@ their own modules, called the same way (ADR-0066 clause 4).
 
 `doc/architecture/runtime-model.md` sections 3, 10 and 22 govern where and
 what it changes, ADR-0042 what a Contract holds and ADR-0066 the units;
-`architecture.xmip` carries the maturity.
+`architecture.toml` carries the maturity.
