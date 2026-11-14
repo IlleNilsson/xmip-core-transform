@@ -30,6 +30,9 @@ use crate::{Stage, Transform, TransformError, TransformUnit, Values};
 /// Script, as the standard module declares it.
 pub const UNIT: TransformUnit = TransformUnit::new(SCRIPT_UNIT, open);
 
+/// The program the runtime is: PowerShell.
+const POWERSHELL: &str = "pwsh";
+
 /// The host the runtime runs: it loads the script once, says it is ready,
 /// then answers each frame — a length and that many bytes of UTF-8 — with
 /// an outcome, a length and the new content, or the failure in words.
@@ -77,7 +80,7 @@ impl Host {
     /// The runtime started on `script`, once it said the script loaded.
     fn start(script: &str) -> Result<Self, String> {
         let utf16: Vec<u8> = HOST.encode_utf16().flat_map(u16::to_le_bytes).collect();
-        let mut child = Command::new("pwsh")
+        let mut child = Command::new(POWERSHELL)
             .args([
                 "-NoLogo",
                 "-NoProfile",
@@ -211,6 +214,31 @@ mod tests {
     use crate::{nothing, transformed};
     use std::time::{Duration, Instant};
 
+    /// Whether PowerShell is there to start. It is an optional tool: where
+    /// it is absent, the test that needs it says SKIPPED and fails nothing
+    /// (CONTRIBUTING.md, *The toolchain*). Only its start is asked, and the
+    /// process is ended at once; any other refusal to start fails the test.
+    fn powershell_is_there(test: &str) -> bool {
+        let started = Command::new(POWERSHELL)
+            .arg("-Version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        match started {
+            Ok(mut child) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                true
+            }
+            Err(absent) if absent.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("SKIPPED: {test}: PowerShell ({POWERSHELL}) is absent");
+                false
+            }
+            Err(failed) => panic!("PowerShell ({POWERSHELL}) cannot be started: {failed}"),
+        }
+    }
+
     fn script(name: &str, body: &str) -> String {
         let folder =
             std::env::temp_dir().join(format!("xmip-script-{name}-{}", std::process::id()));
@@ -233,6 +261,9 @@ mod tests {
 
     #[test]
     fn a_powershell_script_is_loaded_once_and_called_warm_for_each_message() {
+        if !powershell_is_there("a PowerShell script is called warm") {
+            return;
+        }
         let place = script("upper", "param($text) $text.ToUpperInvariant()");
         let given = [
             (
@@ -269,6 +300,9 @@ mod tests {
 
     #[test]
     fn a_failing_script_says_why_and_the_runtime_stays_warm() {
+        if !powershell_is_there("a failing script says why") {
+            return;
+        }
         let place = script(
             "throw",
             "param($text) if ($text -eq 'bad') { throw 'no bad orders' }; $text",

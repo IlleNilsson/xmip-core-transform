@@ -45,10 +45,11 @@ tree, so a Stylesheet holds the document it transforms.
 is opened and kept warm: the script is loaded once and handed one Message's
 content at a time (the owner, 2026-10-22: *We have to be lenient to people
 who do not know all languages*). JavaScript is refused by name, and no
-setting allows it (`script::refusal`, the one rule the configuration's
-check and a starting node call). A script is never refused for being slow;
-the operations surfaces report its cost and suggest a compiled unit
-(`xmip-core-observe`'s `advice`).
+setting allows it (`declaration::script_refusal`, the one rule the
+configuration's check and a starting node call). A script is never refused
+for being slow; the operations surfaces report its cost and suggest a
+compiled unit (`xmip-core-observe`'s `advice`). Where `pwsh` is absent,
+the tests that run a script say SKIPPED and fail nothing.
 
 A designer's map and a user's own compiled code are transform units of
 their own modules, called the same way (ADR-0066 clause 4).
