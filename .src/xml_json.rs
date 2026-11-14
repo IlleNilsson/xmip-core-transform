@@ -12,14 +12,16 @@
 //! element's children is refused for the same reason: JSON's object has
 //! no place for it.
 //!
-//! The XML is read by `quick-xml`'s reader, which checks that every end tag
-//! closes the element it ends and never builds a document.
+//! The XML is read by the estate's one XML reader streamed
+//! (`codec::xml::streamed`), which holds a piece at a time, checks that
+//! every end tag closes the element it ends and that one root stands alone,
+//! and never builds a document.
 
 use std::borrow::Cow;
 use std::io::{BufRead, Write};
 
-use quick_xml::events::Event;
-use quick_xml::reader::Reader;
+use codec::xml::streamed::{Streamed, Unread};
+use codec::xml::{Event, Tag};
 
 use crate::TransformError;
 use crate::convert::json_string;
@@ -72,6 +74,16 @@ fn refused(why: impl std::fmt::Display) -> TransformError {
     TransformError::new(format!("{NAME}: {why}"))
 }
 
+fn unread(failed: &Unread) -> TransformError {
+    match failed {
+        Unread::Input(failed) => TransformError::of_io(NAME, failed),
+        Unread::Malformed(malformed) => refused(format!(
+            "the XML is not well formed near byte {}: {}",
+            malformed.at, malformed.reason
+        )),
+    }
+}
+
 /// Write the XML read from `input` to `output` as JSON, writing the
 /// elements `arrays` names as arrays.
 ///
@@ -83,50 +95,30 @@ pub(crate) fn convert(
     input: &mut dyn BufRead,
     output: &mut dyn Write,
 ) -> Result<(), TransformError> {
-    let mut reader = Reader::from_reader(input);
+    let mut reader = Streamed::document(input).map_err(|failed| unread(&failed))?;
     let mut writer = Writer {
         output,
         arrays,
         open: Vec::new(),
         rooted: false,
     };
-    let mut buffer = Vec::new();
-    loop {
-        let event = reader.read_event_into(&mut buffer).map_err(|failed| {
-            refused(format!(
-                "the XML is not well formed near byte {}: {failed}",
-                reader.error_position()
-            ))
-        })?;
-        match event {
-            Event::Start(start) => {
-                let attributes = attributes(&start)?;
-                writer.start(name_of(start.name().as_ref()), &attributes)?;
-            }
-            Event::Empty(start) => {
-                let attributes = attributes(&start)?;
-                writer.start(name_of(start.name().as_ref()), &attributes)?;
-                writer.end()?;
+    while let Some(piece) = reader.read().map_err(|failed| unread(&failed))? {
+        match piece.event {
+            Event::Start(tag) => {
+                writer.start(tag.name().to_string(), &attributes(&tag)?)?;
+                if tag.empty() {
+                    writer.end()?;
+                }
             }
             Event::End(_) => writer.end()?,
-            Event::Text(text) => writer.text(&text.xml10_content())?,
-            Event::CData(data) => writer.text(data.as_ref())?,
-            Event::GeneralRef(reference) => {
-                let character = match reference.resolve_char_ref() {
-                    Ok(Some(character)) => character,
-                    _ => predefined(&reference).ok_or_else(|| {
-                        refused(format!(
-                            "the entity '&{};' is not one XML predefines",
-                            &*reference
-                        ))
-                    })?,
-                };
+            Event::Text(text) => writer.text(&codec::xml::line_ends(text))?,
+            Event::CData(data) => writer.text(&codec::xml::line_ends(data))?,
+            Event::Reference(name) => {
+                let character = codec::xml::entity(name).map_err(|why| refused(why.message))?;
                 writer.text(character.encode_utf8(&mut [0; 4]))?;
             }
-            Event::Eof => break,
-            Event::Comment(_) | Event::Decl(_) | Event::PI(_) | Event::DocType(_) => {}
+            Event::Comment(_) | Event::Instruction { .. } | Event::Doctype(_) => {}
         }
-        buffer.clear();
     }
     if !writer.rooted {
         return Err(refused("the XML holds no element"));
@@ -143,38 +135,17 @@ pub(crate) fn convert(
         .map_err(|failed| TransformError::of_io(NAME, &failed))
 }
 
-/// One of the five entities XML predefines.
-fn predefined(name: &str) -> Option<char> {
-    match name {
-        "amp" => Some('&'),
-        "lt" => Some('<'),
-        "gt" => Some('>'),
-        "quot" => Some('"'),
-        "apos" => Some('\''),
-        _ => None,
-    }
-}
-
-fn name_of(raw: &str) -> String {
-    raw.to_owned()
-}
-
-fn attributes(
-    start: &quick_xml::events::BytesStart<'_>,
-) -> Result<Vec<(String, String)>, TransformError> {
-    start
-        .attributes()
-        .map(|attribute| {
-            let attribute =
-                attribute.map_err(|failed| refused(format!("an attribute: {failed}")))?;
-            let value = attribute
-                .normalized_value(quick_xml::XmlVersion::Implicit1_0)
+/// A start tag's attributes, each value read as XML reads it.
+fn attributes(tag: &Tag<'_>) -> Result<Vec<(String, String)>, TransformError> {
+    tag.attributes()
+        .map(|written| {
+            let written = written.map_err(|failed| refused(format!("an attribute: {failed}")))?;
+            let value = codec::xml::attribute_value(written.value)
                 .map_err(|failed| refused(format!("an attribute's value: {failed}")))?;
-            Ok((name_of(attribute.key.as_ref()), value.into_owned()))
+            Ok((written.name.to_string(), value.into_owned()))
         })
         .collect()
 }
-
 /// The JSON written so far, and the elements open.
 struct Writer<'a> {
     output: &'a mut dyn Write,
