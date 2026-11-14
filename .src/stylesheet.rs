@@ -100,17 +100,17 @@ pub fn open(
     Ok(Box::new(Stylesheet { compiled }))
 }
 
-/// The `version` the stylesheet's root element declares, as written.
+/// The `version` the stylesheet's root element declares, as written,
+/// read by the estate's one XML reader.
 fn declared_version(stylesheet: &str) -> Option<String> {
-    let mut reader = quick_xml::reader::Reader::from_str(stylesheet);
+    let mut reader = codec::xml::Reader::document(stylesheet);
     loop {
-        match reader.read_event().ok()? {
-            quick_xml::events::Event::Start(root) | quick_xml::events::Event::Empty(root) => {
-                let version = root.try_get_attribute("version").ok()??;
-                return Some(version.value.trim().to_string());
-            }
-            quick_xml::events::Event::Eof => return None,
-            _ => {}
+        if let codec::xml::Event::Start(root) = reader.read().ok()??.event {
+            let version = root
+                .attributes()
+                .map_while(Result::ok)
+                .find(|written| written.name == "version")?;
+            return Some(version.value.trim().to_string());
         }
     }
 }

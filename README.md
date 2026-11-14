@@ -18,9 +18,9 @@ The standard transform units, each declared once beside its code as an
 | `Stylesheet` | applies an XSLT stylesheet through the engine the step chooses | `engine`; `stylesheet`; `version` |
 | `Script` | runs a script, in PowerShell, kept warm | `runtime`; `script` |
 
-**Convert** never holds the content whole. XML is read by `quick-xml`'s
-event reader; JSON by `serde_json`'s reader through visitors that write as
-they visit; CSV by the Foundation's walk of delimited records
+**Convert** never holds the content whole. XML is read by the estate's
+one XML reader streamed (`codec::xml::streamed`), a piece at a time; JSON
+by `serde_json`'s reader through visitors that write as they visit; CSV by the Foundation's walk of delimited records
 (`message::record`), a piece at a time. What it reads and writes goes
 through two pieces the step keeps (`xmip-core`'s `kept`), so the output
 leaves a piece at a time, not a name or a value at a time. An element is
