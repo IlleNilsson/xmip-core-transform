@@ -48,8 +48,16 @@ who do not know all languages*). JavaScript is refused by name, and no
 setting allows it (`declaration::script_refusal`, the one rule the
 configuration's check and a starting node call). A script is never refused
 for being slow; the operations surfaces report its cost and suggest a
-compiled unit (`xmip-core-observe`'s `advice`). Where `pwsh` is absent,
-the tests that run a script say SKIPPED and fail nothing.
+compiled unit (`xmip-core-observe`'s `advice`). What the runtime says on its
+standard error is read while it runs by one thread of its own
+(`script::standard_error`), which keeps the last 64 KiB and counts the bytes
+before them, so a runtime may say as much as it likes without blocking.
+When it ends, the step's refusal carries those last words, with
+`(N earlier bytes dropped)` in front where there were more; a dropped step
+kills and reaps its runtime and joins that thread. A process the script
+starts that inherits the standard error keeps it open past the runtime
+(open problem 74). Where `pwsh` is absent, the tests that run a script say
+SKIPPED and fail nothing.
 
 A designer's map and a user's own compiled code are transform units of
 their own modules, called the same way (ADR-0066 clause 4).

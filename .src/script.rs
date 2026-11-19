@@ -16,6 +16,12 @@
 //! A script is never refused for being slow: the operations surfaces
 //! report a step's cost per Message and suggest a compiled unit where it
 //! is costly (`xmip-core-observe`'s advice).
+//!
+//! What the runtime says on its standard error is drained while it runs
+//! ([`standard_error`]), so it may say as much as it likes without
+//! blocking, and its last words are there, bounded, when it ends.
+
+mod standard_error;
 
 use std::io::{BufReader, Read, Write};
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
@@ -26,6 +32,7 @@ use message::Message;
 
 use crate::declaration::{SCRIPT as NAME, SCRIPT_UNIT, script_refusal as refusal};
 use crate::{Stage, Transform, TransformError, TransformUnit, Values};
+use standard_error::StandardError;
 
 /// Script, as the standard module declares it.
 pub const UNIT: TransformUnit = TransformUnit::new(SCRIPT_UNIT, open);
@@ -35,8 +42,11 @@ const POWERSHELL: &str = "pwsh";
 
 /// The host the runtime runs: it loads the script once, says it is ready,
 /// then answers each frame — a length and that many bytes of UTF-8 — with
-/// an outcome, a length and the new content, or the failure in words.
-const HOST: &str = r"$ErrorActionPreference = 'Stop'
+/// an outcome, a length and the new content, or the failure in words. What
+/// it says on its standard error is plain text without colors, so its last
+/// words read as words: PowerShell started with an encoded command would
+/// write them as CLIXML, colored.
+const HOST: &str = r"$ErrorActionPreference = 'Stop'; $PSStyle.OutputRendering = 'PlainText'
 $reader = [IO.BinaryReader]::new([Console]::OpenStandardInput())
 $writer = [IO.BinaryWriter]::new([Console]::OpenStandardOutput())
 $transform = [scriptblock]::Create([IO.File]::ReadAllText($env:XMIP_SCRIPT))
@@ -69,11 +79,14 @@ fn open(_: Stage, values: &Values) -> Result<Box<dyn Transform>, String> {
     }))
 }
 
-/// The runtime's process, warm, with its two ends.
+/// The runtime's process, warm, with its two ends and what it says on its
+/// standard error. Dropped, the process is killed and reaped, and then the
+/// drain joined as `errors` drops, once its pipe has ended.
 struct Host {
     child: Child,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
+    errors: StandardError,
 }
 
 impl Host {
@@ -85,6 +98,8 @@ impl Host {
                 "-NoLogo",
                 "-NoProfile",
                 "-NonInteractive",
+                "-OutputFormat",
+                "Text",
                 "-EncodedCommand",
             ])
             .arg(codec::base64::encode(&utf16))
@@ -94,15 +109,25 @@ impl Host {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|failed| format!("{NAME}: PowerShell (pwsh) cannot be started: {failed}"))?;
-        let (Some(input), Some(output)) = (child.stdin.take(), child.stdout.take()) else {
-            return Err(format!(
-                "{NAME}: PowerShell's standard streams were not handed over"
+        let handed = (child.stdin.take(), child.stdout.take(), child.stderr.take());
+        let (Some(input), Some(output), Some(errors)) = handed else {
+            return Err(abandoned(
+                child,
+                "PowerShell's standard streams were not handed over",
             ));
+        };
+        let errors = match StandardError::drained(errors) {
+            Ok(drained) => drained,
+            Err(failed) => {
+                let why = format!("PowerShell's standard error cannot be drained: {failed}");
+                return Err(abandoned(child, &why));
+            }
         };
         let mut host = Self {
             child,
             input,
             output: BufReader::new(output),
+            errors,
         };
         if host.number().ok() != Some(0) {
             let why = host.failure();
@@ -117,19 +142,11 @@ impl Host {
         Ok(u32::from_le_bytes(bytes))
     }
 
-    /// What the runtime said on its error stream before it ended.
+    /// What the runtime said last on its standard error: it is killed and
+    /// reaped, and its drain read to the end of the pipe.
     fn failure(&mut self) -> String {
-        let _ = self.child.kill();
-        let mut said = String::new();
-        if let Some(mut errors) = self.child.stderr.take() {
-            let _ = errors.read_to_string(&mut said);
-        }
-        let said = said.trim();
-        if said.is_empty() {
-            "it ended without a word".into()
-        } else {
-            said.to_string()
-        }
+        end(&mut self.child);
+        self.errors.last_words()
     }
 
     /// One content handed over and its answer: the new content, or the
@@ -154,9 +171,20 @@ impl Host {
 
 impl Drop for Host {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        end(&mut self.child);
     }
+}
+
+/// The runtime's process killed and reaped.
+fn end(child: &mut Child) {
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+/// `child` ended before it became a [`Host`], and why, in words.
+fn abandoned(mut child: Child, why: &str) -> String {
+    end(&mut child);
+    format!("{NAME}: {why}")
 }
 
 /// A step's script, its runtime warm; started again where it ended.
@@ -227,8 +255,7 @@ mod tests {
             .spawn();
         match started {
             Ok(mut child) => {
-                let _ = child.kill();
-                let _ = child.wait();
+                end(&mut child);
                 true
             }
             Err(absent) if absent.kind() == std::io::ErrorKind::NotFound => {
@@ -239,20 +266,179 @@ mod tests {
         }
     }
 
-    fn script(name: &str, body: &str) -> String {
+    /// A script written into a folder of its own, which goes with it when
+    /// the test ends, passed or failed.
+    struct Written {
+        folder: std::path::PathBuf,
+        path: String,
+    }
+
+    impl Drop for Written {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.folder);
+        }
+    }
+
+    fn script(name: &str, body: &str) -> Written {
         let folder =
             std::env::temp_dir().join(format!("xmip-script-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&folder).expect("a folder");
         let place = folder.join("transform.ps1");
         std::fs::write(&place, body).expect("written");
-        place.to_string_lossy().into_owned()
+        Written {
+            path: place.to_string_lossy().into_owned(),
+            folder,
+        }
+    }
+
+    /// How long a test waits before it calls its runtime hung: far beyond
+    /// any start of PowerShell on a machine shared with other builds, so
+    /// only a runtime that never answers reaches it.
+    const HUNG: Duration = Duration::from_secs(60);
+
+    /// `work` done on a thread of its own and awaited at most [`HUNG`], so
+    /// a runtime that never answers fails the test instead of hanging it.
+    fn within<T: Send + 'static>(test: &str, work: impl FnOnce() -> T + Send + 'static) -> T {
+        let (told, answer) = std::sync::mpsc::channel();
+        let working = std::thread::spawn(move || {
+            let _ = told.send(work());
+        });
+        match answer.recv_timeout(HUNG) {
+            Ok(done) => done,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                panic!("{test}: hung past {HUNG:?}")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                std::panic::resume_unwind(working.join().expect_err("the work panicked"))
+            }
+        }
+    }
+
+    /// The tail of a runtime's diagnostics, its words of dropped bytes
+    /// included, is at most this long.
+    const SAID: usize = 64 * 1024 + 64;
+
+    #[test]
+    #[expect(non_snake_case, reason = "MiB and KiB are spelled as the units are")]
+    fn a_script_writing_1_MiB_to_standard_error_completes_and_its_diagnostics_stay_within_64_KiB() {
+        const TEST: &str = "a script writing 1 MiB to standard error completes";
+        if !powershell_is_there(TEST) {
+            return;
+        }
+        let script = script(
+            "loud",
+            "param($text) [Console]::Error.Write('x' * 1MB); [Console]::Error.Flush(); $text",
+        );
+        let path = script.path.clone();
+        let said = within(TEST, move || {
+            let mut host = Host::start(&path).expect("loads");
+            let answer = host.call(b"order a-1").expect("answered");
+            assert_eq!(answer.as_deref(), Ok(&b"order a-1"[..]));
+            host.failure()
+        });
+        assert!(said.len() <= SAID, "{} bytes said", said.len());
+        assert!(said.contains(" earlier bytes dropped) xxx"), "{said:.200}");
+        assert!(said.ends_with("xxx"), "{said:.200}");
+    }
+
+    #[test]
+    fn non_terminating_errors_beyond_the_pipe_do_not_block() {
+        const TEST: &str = "non-terminating errors beyond the pipe do not block";
+        if !powershell_is_there(TEST) {
+            return;
+        }
+        // A hundred errors of 4,000 characters each: about 400 KB of words,
+        // beyond any pipe, none of them stopping the script.
+        let script = script(
+            "errors",
+            "param($text)
+            foreach ($i in 1..100) {
+                Write-Error -ErrorAction Continue ('not stopping ' + $i + ' ' + ('y' * 4000))
+            }
+            $text",
+        );
+        let path = script.path.clone();
+        let said = within(TEST, move || {
+            let mut host = Host::start(&path).expect("loads");
+            let answer = host.call(b"order a-1").expect("answered");
+            assert_eq!(answer.as_deref(), Ok(&b"order a-1"[..]));
+            host.failure()
+        });
+        assert!(said.len() <= SAID, "{} bytes said", said.len());
+        assert!(said.contains(" earlier bytes dropped) "), "{said:.200}");
+        assert!(said.contains("not stopping 100 "), "{said:.200}");
+    }
+
+    #[test]
+    fn a_script_failing_to_load_says_its_last_words_bounded() {
+        const TEST: &str = "a script failing to load says its last words";
+        if !powershell_is_there(TEST) {
+            return;
+        }
+        // Ten unexpected tokens of 20,000 characters each, a letter of
+        // their own per line, a to j: the parse error names every one,
+        // about 200 KB of words, beyond any pipe. What PowerShell says
+        // around them is in its own language; the lines it quotes are the
+        // script's, so the last words are known by the line they quote.
+        let mut body = String::new();
+        for letter in 'a'..='j' {
+            body.push_str("1 '");
+            body.push_str(&letter.to_string().repeat(20_000));
+            body.push_str("'\n");
+        }
+        let script = script("unloaded", &body);
+        let path = script.path.clone();
+        let refused = within(TEST, move || Host::start(&path).err().expect("refused"));
+        assert!(
+            refused.len() <= SAID + script.path.len() + 64,
+            "{} bytes",
+            refused.len()
+        );
+        assert!(refused.contains("did not load: ("), "{refused:.200}");
+        assert!(
+            refused.contains(" earlier bytes dropped) "),
+            "{refused:.200}"
+        );
+        assert!(
+            refused.contains(&"j".repeat(1_000)),
+            "the last line quoted: {refused:.200}"
+        );
+        assert!(
+            !refused.contains(&"a".repeat(1_000)),
+            "the first line dropped: {refused:.200}"
+        );
+    }
+
+    /// The drain ends only when the runtime's standard error does, which
+    /// is when the runtime has ended: nothing left to watch once the host
+    /// is dropped is the runtime ended and its drain joined.
+    #[test]
+    fn dropping_the_host_ends_its_runtime_and_joins_its_drain() {
+        const TEST: &str = "dropping the host ends its runtime and joins its drain";
+        if !powershell_is_there(TEST) {
+            return;
+        }
+        let script = script(
+            "dropped",
+            "param($text) [Console]::Error.Write('x' * 1MB); $text",
+        );
+        let path = script.path.clone();
+        let watched = within(TEST, move || {
+            let mut host = Host::start(&path).expect("loads");
+            let answer = host.call(b"order a-1").expect("answered");
+            assert_eq!(answer.as_deref(), Ok(&b"order a-1"[..]));
+            let watched = host.errors.watched();
+            drop(host);
+            watched
+        });
+        assert!(watched.upgrade().is_none(), "the drain still runs");
     }
 
     #[test]
     fn javascript_is_refused_by_name_when_the_step_opens() {
         let place = script("javascript", "param($text) $text");
-        let refused = transformed(NAME, &[("runtime", "javascript"), ("script", &place)], b"")
-            .expect_err("refused");
+        let given = [("runtime", "javascript"), ("script", place.path.as_str())];
+        let refused = transformed(NAME, &given, b"").expect_err("refused");
         assert!(
             refused.to_string().contains("JavaScript is not a runtime"),
             "{refused}"
@@ -270,7 +456,10 @@ mod tests {
                 "runtime".to_string(),
                 xcore::settings::Given::Text("powershell".into()),
             ),
-            ("script".to_string(), xcore::settings::Given::Text(place)),
+            (
+                "script".to_string(),
+                xcore::settings::Given::Text(place.path.clone()),
+            ),
         ];
         let started = Instant::now();
         let opened = UNIT
@@ -312,7 +501,10 @@ mod tests {
                 "runtime".to_string(),
                 xcore::settings::Given::Text("powershell".into()),
             ),
-            ("script".to_string(), xcore::settings::Given::Text(place)),
+            (
+                "script".to_string(),
+                xcore::settings::Given::Text(place.path.clone()),
+            ),
         ];
         let opened = UNIT.open(Stage::Receive, &given).expect("opens");
         let refused = opened
