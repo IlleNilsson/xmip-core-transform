@@ -8,8 +8,9 @@
 //! last is there, bounded, when it ends (ADR-0066, amendment 2026-11-19).
 //!
 //! The drain ends when the pipe does, which is when every process holding
-//! its writing end has ended. A process the script started that inherited
-//! it keeps it open past its runtime (open problem 74).
+//! its writing end has ended: a process the script started inherits it, so
+//! the runtime's whole tree is ended before the drain is joined
+//! (`process_tree`).
 
 use std::collections::VecDeque;
 use std::io::{ErrorKind, Read};

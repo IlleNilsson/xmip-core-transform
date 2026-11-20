@@ -19,12 +19,16 @@
 //!
 //! What the runtime says on its standard error is drained while it runs
 //! ([`standard_error`]), so it may say as much as it likes without
-//! blocking, and its last words are there, bounded, when it ends.
+//! blocking, and its last words are there, bounded, when it ends. The
+//! runtime runs as the root of a process tree of its own
+//! ([`process_tree`]), ended as one, so a process the script started
+//! holds that pipe no longer than the runtime does.
 
+mod process_tree;
 mod standard_error;
 
 use std::io::{BufReader, Read, Write};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
 use xcore::lock::Locked;
 
@@ -32,6 +36,7 @@ use message::Message;
 
 use crate::declaration::{SCRIPT as NAME, SCRIPT_UNIT, script_refusal as refusal};
 use crate::{Stage, Transform, TransformError, TransformUnit, Values};
+use process_tree::ProcessTree;
 use standard_error::StandardError;
 
 /// Script, as the standard module declares it.
@@ -79,52 +84,50 @@ fn open(_: Stage, values: &Values) -> Result<Box<dyn Transform>, String> {
     }))
 }
 
-/// The runtime's process, warm, with its two ends and what it says on its
-/// standard error. Dropped, the process is killed and reaped, and then the
-/// drain joined as `errors` drops, once its pipe has ended.
+/// The runtime's process tree, warm, with its two ends and what it says on
+/// its standard error. Dropped, the tree is ended, and then the drain
+/// joined as `errors` drops, once its pipe has ended with the tree.
 struct Host {
-    child: Child,
+    runtime: ProcessTree,
     input: ChildStdin,
     output: BufReader<ChildStdout>,
     errors: StandardError,
 }
 
 impl Host {
-    /// The runtime started on `script`, once it said the script loaded.
+    /// The runtime started on `script`, once it said the script loaded. A
+    /// runtime that does not become a host is ended as it drops.
     fn start(script: &str) -> Result<Self, String> {
         let utf16: Vec<u8> = HOST.encode_utf16().flat_map(u16::to_le_bytes).collect();
-        let mut child = Command::new(POWERSHELL)
-            .args([
-                "-NoLogo",
-                "-NoProfile",
-                "-NonInteractive",
-                "-OutputFormat",
-                "Text",
-                "-EncodedCommand",
-            ])
-            .arg(codec::base64::encode(&utf16))
-            .env("XMIP_SCRIPT", script)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|failed| format!("{NAME}: PowerShell (pwsh) cannot be started: {failed}"))?;
-        let handed = (child.stdin.take(), child.stdout.take(), child.stderr.take());
+        let mut runtime = ProcessTree::started(
+            Command::new(POWERSHELL)
+                .args([
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-OutputFormat",
+                    "Text",
+                    "-EncodedCommand",
+                ])
+                .arg(codec::base64::encode(&utf16))
+                .env("XMIP_SCRIPT", script)
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped()),
+        )
+        .map_err(|failed| format!("{NAME}: PowerShell (pwsh) cannot be started: {failed}"))?;
+        let root = runtime.root();
+        let handed = (root.stdin.take(), root.stdout.take(), root.stderr.take());
         let (Some(input), Some(output), Some(errors)) = handed else {
-            return Err(abandoned(
-                child,
-                "PowerShell's standard streams were not handed over",
+            return Err(format!(
+                "{NAME}: PowerShell's standard streams were not handed over"
             ));
         };
-        let errors = match StandardError::drained(errors) {
-            Ok(drained) => drained,
-            Err(failed) => {
-                let why = format!("PowerShell's standard error cannot be drained: {failed}");
-                return Err(abandoned(child, &why));
-            }
-        };
+        let errors = StandardError::drained(errors).map_err(|failed| {
+            format!("{NAME}: PowerShell's standard error cannot be drained: {failed}")
+        })?;
         let mut host = Self {
-            child,
+            runtime,
             input,
             output: BufReader::new(output),
             errors,
@@ -142,10 +145,10 @@ impl Host {
         Ok(u32::from_le_bytes(bytes))
     }
 
-    /// What the runtime said last on its standard error: it is killed and
-    /// reaped, and its drain read to the end of the pipe.
+    /// What the runtime said last on its standard error: its tree is ended,
+    /// and its drain read to the end of the pipe.
     fn failure(&mut self) -> String {
-        end(&mut self.child);
+        self.runtime.end();
         self.errors.last_words()
     }
 
@@ -170,21 +173,11 @@ impl Host {
 }
 
 impl Drop for Host {
+    /// The tree ended before `errors` drops, so its drain is joined on a
+    /// pipe that has ended.
     fn drop(&mut self) {
-        end(&mut self.child);
+        self.runtime.end();
     }
-}
-
-/// The runtime's process killed and reaped.
-fn end(child: &mut Child) {
-    let _ = child.kill();
-    let _ = child.wait();
-}
-
-/// `child` ended before it became a [`Host`], and why, in words.
-fn abandoned(mut child: Child, why: &str) -> String {
-    end(&mut child);
-    format!("{NAME}: {why}")
 }
 
 /// A step's script, its runtime warm; started again where it ended.
@@ -247,17 +240,15 @@ mod tests {
     /// (CONTRIBUTING.md, *The toolchain*). Only its start is asked, and the
     /// process is ended at once; any other refusal to start fails the test.
     fn powershell_is_there(test: &str) -> bool {
-        let started = Command::new(POWERSHELL)
-            .arg("-Version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn();
+        let started = ProcessTree::started(
+            Command::new(POWERSHELL)
+                .arg("-Version")
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null()),
+        );
         match started {
-            Ok(mut child) => {
-                end(&mut child);
-                true
-            }
+            Ok(_) => true,
             Err(absent) if absent.kind() == std::io::ErrorKind::NotFound => {
                 eprintln!("SKIPPED: {test}: PowerShell ({POWERSHELL}) is absent");
                 false
@@ -424,6 +415,54 @@ mod tests {
             watched
         });
         assert!(watched.upgrade().is_none(), "the drain still runs");
+    }
+
+    /// How long a tree's end may take to reach the drain, and a killed
+    /// process to be gone: far beyond a kill on a machine shared with other
+    /// builds, far short of the two minutes the script's child sleeps.
+    const ENDED: Duration = Duration::from_secs(5);
+
+    /// A process the script starts inherits the runtime's standard error.
+    /// Dropping the host ends the runtime's whole tree, so the pipe ends
+    /// with it: the drop and its drain return at once, never waiting for
+    /// the child to end on its own, and the child is gone.
+    #[test]
+    fn dropping_the_host_ends_a_process_its_script_started_and_never_waits_for_it() {
+        const TEST: &str = "dropping the host ends a process its script started";
+        if !powershell_is_there(TEST) {
+            return;
+        }
+        // The child sleeps two minutes, beyond HUNG, so a drop that waits
+        // for it fails the test rather than passing late.
+        let script = script(
+            "started",
+            "param($text)
+            $sleep = '-NoLogo', '-NoProfile', '-NonInteractive', '-Command', 'Start-Sleep 120'
+            $child = Start-Process ([Environment]::ProcessPath) $sleep -NoNewWindow -PassThru
+            [string] $child.Id",
+        );
+        let path = script.path.clone();
+        let (child, dropped, watched) = within(TEST, move || {
+            let mut host = Host::start(&path).expect("loads");
+            let answer = host.call(b"start").expect("answered").expect("started");
+            let child: u32 = String::from_utf8_lossy(&answer)
+                .trim()
+                .parse()
+                .expect("an id");
+            assert!(process_tree::running(child), "the child {child} runs");
+            let watched = host.errors.watched();
+            let dropping = Instant::now();
+            drop(host);
+            (child, dropping.elapsed(), watched)
+        });
+        println!("Script's host dropped while its script's child ran, in {dropped:?}");
+        assert!(dropped < ENDED, "the drop took {dropped:?}");
+        assert!(watched.upgrade().is_none(), "the drain still runs");
+        let ending = Instant::now();
+        while process_tree::running(child) {
+            assert!(ending.elapsed() < ENDED, "the child {child} still runs");
+            std::thread::sleep(Duration::from_millis(10));
+        }
     }
 
     #[test]

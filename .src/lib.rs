@@ -1,5 +1,3 @@
-#![forbid(unsafe_code)]
-
 //! Transformation: one Message's content into a new Message's (the owner,
 //! 2026-10-22: *A transformation is not a prepare*). A transform unit reads
 //! the Stream of the section it transforms and writes the new content as

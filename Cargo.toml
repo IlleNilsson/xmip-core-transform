@@ -17,7 +17,7 @@ path = ".src/lib.rs"
 # The units' code and what it is built on. Without it the crate is its units'
 # declarations alone, which configure reads the standard module by.
 default = ["units"]
-units = ["dep:message", "dep:codec", "dep:serde", "dep:serde_json"]
+units = ["dep:message", "dep:codec", "dep:serde", "dep:serde_json", "dep:windows-sys", "dep:libc"]
 
 [dependencies]
 # The error is declared once, in core (ADR-0037), and a unit's settings in
@@ -35,6 +35,27 @@ codec = { package = "xmip-core-library-codec", git = "https://github.com/IlleNil
 # and JSON's strings written: the parser the estate already reads with.
 serde = { version = "1", optional = true }
 serde_json = { version = "1", optional = true }
+
+# A Script runtime's process tree (`script::process_tree`): on Windows the
+# job object it runs in, its first thread, read from a snapshot of its own
+# threads and let run once it is in the job, and the job terminated (Debug
+# and Kernel carry the snapshot's thread entry). The version xmip-core, the
+# runtime and secret already build, so nothing new is compiled.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", optional = true, features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ProcessSnapshotting",
+    "Win32_System_JobObjects",
+    "Win32_System_Kernel",
+    "Win32_System_Threading",
+] }
+
+# On Unix, the process group the runtime leads, killed as one: kill(2).
+# In the lock already.
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
 
 # The module's timing program (doc/governance/rust-style.md section 5c): a
 # plain cargo test leaves it out, and the landing runs it after every other
@@ -54,7 +75,11 @@ file = { package = "xmip-core-library-file", git = "https://github.com/IlleNilss
 context = { package = "xmip-core-context", git = "https://github.com/IlleNilsson/xmip-core-context", branch = "main" }
 
 [lints.rust]
-unsafe_code = "forbid"
+# deny, not forbid, because forbid cannot be lowered anywhere: the one file
+# .src/script/process_tree.rs allows unsafe code with its reason at the top
+# (ADR-0050, amendment 2026-09-25; ADR-0066, amendment 2026-11-20), and
+# nothing else may. test/Unsafe.Test.ps1 holds the list.
+unsafe_code = "deny"
 
 [lints.clippy]
 too_many_lines = "warn"

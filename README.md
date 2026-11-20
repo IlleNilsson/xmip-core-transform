@@ -54,10 +54,13 @@ standard error is read while it runs by one thread of its own
 before them, so a runtime may say as much as it likes without blocking.
 When it ends, the step's refusal carries those last words, with
 `(N earlier bytes dropped)` in front where there were more; a dropped step
-kills and reaps its runtime and joins that thread. A process the script
-starts that inherits the standard error keeps it open past the runtime
-(open problem 74). Where `pwsh` is absent, the tests that run a script say
-SKIPPED and fail nothing.
+ends its runtime and joins that thread. The runtime runs as the root of a
+process tree of its own (`script::process_tree`), ended as one: on Windows
+in a job object it is placed in before it runs, which kills what is left
+in it when it closes; on Unix as the leader of a process group of its own,
+killed as a group. So a process the script starts, which inherits the
+standard error, never holds it open past the runtime. Where `pwsh` is
+absent, the tests that run a script say SKIPPED and fail nothing.
 
 A designer's map and a user's own compiled code are transform units of
 their own modules, called the same way (ADR-0066 clause 4).
