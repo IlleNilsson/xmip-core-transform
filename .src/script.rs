@@ -269,25 +269,17 @@ mod tests {
     /// A script written into a folder of its own, which goes with it when
     /// the test ends, passed or failed.
     struct Written {
-        folder: std::path::PathBuf,
+        _folder: file::temporary::Folder,
         path: String,
     }
 
-    impl Drop for Written {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.folder);
-        }
-    }
-
     fn script(name: &str, body: &str) -> Written {
-        let folder =
-            std::env::temp_dir().join(format!("xmip-script-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&folder).expect("a folder");
+        let folder = file::temporary::Folder::new(&format!("script-{name}"));
         let place = folder.join("transform.ps1");
         std::fs::write(&place, body).expect("written");
         Written {
             path: place.to_string_lossy().into_owned(),
-            folder,
+            _folder: folder,
         }
     }
 

@@ -44,14 +44,13 @@ struct Convert {
 
 /// A list a setting gives, its names separated by commas.
 fn listed(text: Option<&str>) -> Vec<String> {
-    text.map(|text| {
+    text.map_or_default(|text| {
         text.split(',')
             .map(str::trim)
             .filter(|name| !name.is_empty())
             .map(str::to_string)
             .collect()
     })
-    .unwrap_or_default()
 }
 
 fn open(_: Stage, values: &Values) -> Result<Box<dyn Transform>, String> {
