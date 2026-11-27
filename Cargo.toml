@@ -1,8 +1,8 @@
 [package]
 name = "xmip-core-transform"
-version = "0.1.0"
-edition = "2024"
-license = "AGPL-3.0-or-later"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 repository = "https://github.com/IlleNilsson/xmip-core-transform"
 description = "Transformation: one Message's content into a new Message's, by the standard transform units, streamed."
 
