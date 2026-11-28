@@ -1,0 +1,3 @@
+[submodule "xrust"]
+	path = xrust
+	url = https://github.com/IlleNilsson/xmip-core-transform-xrust.git

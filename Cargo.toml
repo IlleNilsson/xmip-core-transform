@@ -19,15 +19,15 @@ units = ["dep:message", "dep:codec", "dep:serde", "dep:serde_json", "dep:windows
 [dependencies]
 # The error is declared once, in core (ADR-0037), and a unit's settings in
 # its one shape.
-xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main" }
+xcore = { workspace = true }
 # A unit as its crate declares it, and the stage of the message path it is
 # opened at.
-node = { package = "xmip-core-node", git = "https://github.com/IlleNilsson/xmip-core-node", branch = "main" }
+node = { workspace = true }
 # The Message transformed, and the Foundation's walk of delimited records.
-message = { package = "xmip-core-message", git = "https://github.com/IlleNilsson/xmip-core-message", branch = "main", optional = true }
+message = { workspace = true, optional = true }
 # XML read a piece at a time by the estate's one XML reader, its escaping,
 # and Base 64, spelled once for the estate.
-codec = { package = "xmip-core-library-codec", git = "https://github.com/IlleNilsson/xmip-core-library-codec", branch = "main", optional = true }
+codec = { workspace = true, optional = true }
 # JSON read a value at a time through visitors that write as they visit,
 # and JSON's strings written: the parser the estate already reads with.
 serde = { version = "1", optional = true }
@@ -65,11 +65,11 @@ test = false
 [dev-dependencies]
 # The counting allocator and the one latency spread the estate's tests
 # measure with.
-xcore = { package = "xmip-core", git = "https://github.com/IlleNilsson/xmip-core", branch = "main", features = ["test-support"] }
+xcore = { workspace = true, features = ["test-support"] }
 # A test's own temporary folder (`file::temporary`); for the tests only.
-file = { package = "xmip-core-library-file", git = "https://github.com/IlleNilsson/xmip-core-library-file", branch = "main", features = ["test-support"] }
+file = { workspace = true, features = ["test-support"] }
 # A Message for the tests to transform.
-context = { package = "xmip-core-context", git = "https://github.com/IlleNilsson/xmip-core-context", branch = "main" }
+context = { workspace = true }
 
 [lints.rust]
 # deny, not forbid, because forbid cannot be lowered anywhere: the one file

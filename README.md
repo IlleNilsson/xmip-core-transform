@@ -36,7 +36,9 @@ XSLT transform engines, versions, let the end user choose*): an engine is a
 technology of this capability behind `stylesheet::StylesheetEngine`,
 mounted beside `.src`, declaring the XSLT versions it implements, so a
 stylesheet needing a version its engine does not implement is refused when
-its step is opened. No engine is built yet (open problem 53). A stylesheet is compiled
+its step is opened. One engine is mounted, `xrust`, at `xrust/` (2026-11-28),
+and nothing links it: its `url` can look a name up over the network (open
+problem 53), so a node has no engine yet. A stylesheet is compiled
 when its step is opened, never per Message; what it includes, imports or
 reads is answered from beside it and never over a network. XSLT reads a
 tree, so a Stylesheet holds the document it transforms.
